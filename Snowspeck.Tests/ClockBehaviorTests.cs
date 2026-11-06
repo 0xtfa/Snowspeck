@@ -152,6 +152,27 @@ public class ClockBehaviorTests
         perThread.SelectMany(ids => ids).Should().OnlyHaveUniqueItems();
     }
 
+    [Fact]
+    public void NextId_WhenAnotherThreadIssuesAnIdAfterThisThreadReadsTheClock_ShouldNotReportClockSkew()
+    {
+        // Simulates this thread being paused right after reading the clock while another thread issues an ID
+        // 102 ms later. The clock never moved backwards, so the generator must retry instead of throwing.
+        SignedSnowflakeService service = null!;
+        ScriptedTimeProvider clock = new(call =>
+        {
+            if (call != 1)
+                return T + 100 + call;
+
+            service.NextId();
+            return T;
+        });
+        service = new SignedSnowflakeService(new SnowflakeOptions(), clock);
+
+        long id = service.NextId();
+
+        service.Decode(id).Should().Be(new SnowflakeMetadata(T + 103, 0, 0, 0));
+    }
+
     private sealed class TolerantGenerator(SnowflakeOptions options, TimeProvider timeProvider)
         : SnowflakeServiceBase<long>(options, timeProvider)
     {

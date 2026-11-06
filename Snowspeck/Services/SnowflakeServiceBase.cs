@@ -111,10 +111,13 @@ public abstract class SnowflakeServiceBase<TId> : ISnowflakeGenerator<TId>
     {
         while (true)
         {
+            // Read the state before the clock. In the other order, a thread paused between the two reads can see
+            // a state newer than its stale clock value and misreport that as the clock moving backwards.
+            long oldState = Volatile.Read(ref _state);
+
             long nowMs = GetCurrentTimestamp();
             long nowOffset = nowMs - _epoch;
 
-            long oldState = Volatile.Read(ref _state);
             long lastOff = oldState >> SequenceBits;
             long seq = oldState & SequenceMask;
 
