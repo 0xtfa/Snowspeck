@@ -1,21 +1,44 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
+        <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <IsAotCompatible>true</IsAotCompatible>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <Version>1.1.0</Version>
+        <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    </PropertyGroup>
+
+    <PropertyGroup>
         <PackageId>Snowspeck</PackageId>
-        <PackageVersion>1.0.2</PackageVersion>
         <Authors>Tiago Ferreira Alves</Authors>
+        <Copyright>Copyright (c) 2025 Tiago Ferreira Alves</Copyright>
         <Description>A lightweight, thread-safe, extensible, and decodable Snowflake ID generator for .NET</Description>
-        <RepositoryType>git</RepositoryType>
-        <RepositoryUrl>https://github.com/synpse/Snowspeck</RepositoryUrl>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
-        <PackageTags>
-            snowflake;id;generator;distributed;unique;identifier;ids;long;ulong;64-bit;time-ordered;high-performance
-        </PackageTags>
+        <PackageProjectUrl>https://github.com/0xtfa/Snowspeck</PackageProjectUrl>
+        <RepositoryType>git</RepositoryType>
+        <RepositoryUrl>https://github.com/0xtfa/Snowspeck</RepositoryUrl>
+        <PackageTags>snowflake;id;generator;distributed;unique;identifier;ids;long;ulong;64-bit;time-ordered;high-performance</PackageTags>
         <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageReleaseNotes>https://github.com/0xtfa/Snowspeck/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <EnablePackageValidation>true</EnablePackageValidation>
+        <PackageValidationBaselineVersion>1.0.2</PackageValidationBaselineVersion>
     </PropertyGroup>
 
     <ItemGroup>
