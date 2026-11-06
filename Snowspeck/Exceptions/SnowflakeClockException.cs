@@ -6,5 +6,9 @@ namespace Snowspeck.Exceptions;
 /// </summary>
 public sealed class SnowflakeClockException : InvalidOperationException
 {
+    /// <summary>
+    /// Initializes a new instance with the specified error message.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
     public SnowflakeClockException(string message) : base(message) { }
 }
