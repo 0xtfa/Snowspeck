@@ -2,13 +2,8 @@ using BenchmarkDotNet.Running;
 
 namespace Snowspeck.Benchmarks;
 
-internal abstract class Program
+internal static class Program
 {
-    private static void Main()
-    {
-        BenchmarkRunner.Run([
-            typeof(SingleWorkerBenchmarks),
-            typeof(MultiWorkerBenchmarks)
-        ]);
-    }
+    private static void Main(string[] args) =>
+        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args.Length > 0 ? args : ["--filter", "*"]);
 }

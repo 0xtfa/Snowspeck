@@ -1,0 +1,94 @@
+# Publishes to NuGet when a version tag is pushed. Published versions can be unlisted but never deleted.
+#
+# One-time setup on nuget.org (your username > Trusted Publishing > add a policy):
+#   Repository Owner: 0xtfa    Repository: Snowspeck    Workflow File: release.yml    Environment: (empty)
+#
+# To release: set <Version> in Snowspeck.csproj, merge to main, then tag that commit on main:
+#   git tag v1.2.3 && git push origin v1.2.3
+
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # The tag check below needs origin/main.
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Check the tag
+        run: |
+          version="$(dotnet msbuild Snowspeck/Snowspeck.csproj -getProperty:Version)"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the package version $version."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::Tag $GITHUB_REF_NAME is not on main."
+            exit 1
+          fi
+
+      - name: Restore
+        run: dotnet restore
+
+      # Building also packs the library and fails if its public API is not
+      # backwards compatible with the release in PackageValidationBaselineVersion.
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test (.NET 8 and .NET 10)
+        run: dotnet test --configuration Release --no-build
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages
+          path: |
+            Snowspeck/bin/Release/*.nupkg
+            Snowspeck/bin/Release/*.snupkg
+          if-no-files-found: error
+
+  # A separate job, so restore, build and test steps never run with the permission to get a NuGet key.
+  publish:
+    name: Publish to NuGet
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Lets NuGet/login exchange a GitHub token for a short-lived NuGet API key.
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages
+          path: packages
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Log in to NuGet
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: 0xtfa # The public nuget.org profile name that owns the package, not an email address.
+
+      # Also pushes the matching .snupkg. --skip-duplicate makes re-running a partly failed job safe.
+      - name: Push packages
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: dotnet nuget push "packages/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate

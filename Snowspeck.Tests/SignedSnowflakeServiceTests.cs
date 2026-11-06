@@ -47,13 +47,13 @@ public class SignedSnowflakeServiceTests
     {
         IOptions<SnowflakeOptions> optionsA = Options.Create(new SnowflakeOptions
         {
-            WorkerId = 2048, // Invalid, max is 1023
+            WorkerId = 2048, // Invalid, max is 31
             Epoch = 1735689600000L
         });
-        
+
         IOptions<SnowflakeOptions> optionsB = Options.Create(new SnowflakeOptions
         {
-            WorkerId = -2048, // Invalid, max is 1023
+            WorkerId = -2048, // Invalid, min is 0
             Epoch = 1735689600000L
         });
 
