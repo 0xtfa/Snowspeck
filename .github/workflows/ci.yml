@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      # Building also packs the library and fails if its public API is not
+      # backwards compatible with the release in PackageValidationBaselineVersion.
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test (.NET 8 and .NET 10)
+        run: dotnet test --configuration Release --no-build
+
+      - name: Upload packages
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages
+          path: |
+            Snowspeck/bin/Release/*.nupkg
+            Snowspeck/bin/Release/*.snupkg
+          if-no-files-found: error
