@@ -9,10 +9,15 @@
 ## Features
 
 - 64-bit unique, time-ordered ID generation
-- Fully thread-safe
+- Fully thread-safe and lock-free
+- Up to 4096 IDs per millisecond per generator
 - Decodable (timestamp, datacenter ID, worker ID, sequence)
+- Testable: supply a `TimeProvider` to control the clock
+- Trimming and Native AOT compatible
 - Minimal dependencies (`Microsoft.Extensions.Options`)
 - Great for distributed systems and high-throughput workloads
+
+Supports **.NET 8** and **.NET 10** (and later).
 
 ---
 
@@ -59,18 +64,25 @@ Install-Package Snowspeck
 
 Snowspeck offers **two implementations** of the generator, depending on whether you prefer signed or unsigned IDs:
 
-| Class                       | Return Type | ID Range           | Notes                                       |
-|----------------------------|-------------|--------------------|---------------------------------------------|
-| `SignedSnowflakeService`   | `long`      | -2⁶³ to 2⁶³−1      | Default in DI setup, fits in signed columns |
-| `UnsignedSnowflakeService` | `ulong`     | 0 to 2⁶⁴−1         | Full 64-bit range, use when unsigned is OK  |
+| Class                       | Interface                   | Return Type | Lifetime from epoch | Notes                                       |
+|----------------------------|-----------------------------|-------------|---------------------|---------------------------------------------|
+| `SignedSnowflakeService`   | `ISnowflakeGenerator<long>`  | `long`      | ~69 years (positive) | Default in DI setup, fits in signed columns |
+| `UnsignedSnowflakeService` | `ISnowflakeGenerator<ulong>` | `ulong`     | ~139 years          | Use when unsigned is OK                     |
 
 Both use the same structure:
-- 41 bits for timestamp
-- 5 bits for datacenter ID
-- 5 bits for worker ID
-- 12 bits for sequence number
+
+| Bits | Field          | Range                         |
+|------|----------------|-------------------------------|
+| 41   | Timestamp      | Milliseconds since the epoch  |
+| 5    | Datacenter ID  | 0–31                          |
+| 5    | Worker ID      | 0–31                          |
+| 12   | Sequence       | 0–4095 per millisecond        |
 
 Choose the implementation that best fits your database, serialization, or sorting needs.
+
+> **Important:** every generator that runs at the same time must have a unique `DatacenterId`/`WorkerId` pair.
+> Create **one** generator per process and reuse it (register it as a singleton). Two generators with the same
+> pair, even inside the same process, can produce duplicate IDs.
 
 ---
 
@@ -85,11 +97,12 @@ using Snowspeck.Services;
 
 var options = new SnowflakeOptions
 {
-    WorkerId = 1,
+    DatacenterId = 1, // 0–31
+    WorkerId = 1,     // 0–31, unique per datacenter
     Epoch = 1735689600000L // (optional) Default is 1735689600000L -> Jan 1, 2025
 };
 
-ISnowflakeGenerator generator = new SignedSnowflakeService(options);
+ISnowflakeGenerator<long> generator = new SignedSnowflakeService(options);
 long id = generator.NextId();
 ```
 
@@ -98,6 +111,8 @@ long id = generator.NextId();
 ### Dependency Injection (ASP.NET Core)
 
 ```csharp
+using Snowspeck.Extensions;
+
 builder.Services.AddSnowspeck(options =>
 {
     options.WorkerId = 1;
@@ -113,14 +128,14 @@ builder.Services.AddSnowspeckUnsigned(options =>
 });
 ```
 
-Once registered, resolve `ISnowflakeGenerator` via constructor injection:
+Once registered, resolve `ISnowflakeGenerator<long>` (or `ISnowflakeGenerator<ulong>` for the unsigned variant) via constructor injection:
 
 ```csharp
 public class MyService
 {
-    private readonly ISnowflakeGenerator _generator;
+    private readonly ISnowflakeGenerator<long> _generator;
 
-    public MyService(ISnowflakeGenerator generator)
+    public MyService(ISnowflakeGenerator<long> generator)
     {
         _generator = generator;
     }
@@ -138,7 +153,7 @@ public class MyService
 
 The generator supports decoding a Snowflake ID back into:
 
-- `Timestamp` (UTC time the ID was generated)
+- `Timestamp` (Unix time in milliseconds when the ID was generated)
 - `DatacenterId`
 - `WorkerId`
 - `Sequence`
@@ -148,6 +163,7 @@ long id = generator.NextId();
 var metadata = generator.Decode(id);
 
 Console.WriteLine($"Timestamp: {metadata.Timestamp}");
+Console.WriteLine($"Created at: {metadata.ToDateTimeOffset():u}");
 Console.WriteLine($"DatacenterId: {metadata.DatacenterId}");
 Console.WriteLine($"WorkerId: {metadata.WorkerId}");
 Console.WriteLine($"Sequence: {metadata.Sequence}");
@@ -155,9 +171,75 @@ Console.WriteLine($"Sequence: {metadata.Sequence}");
 
 ---
 
-## Planned Features
+## Clock Handling
 
-- Future extensions via subclassing (override clock skew handling, timestamp source, etc.)
+Snowflake IDs rely on the system clock never going backwards. If it does (for example after an NTP correction):
+
+- If it moves back by **at most** `MaxClockSkewMs` (default 10 ms), the generator waits for the clock to catch up.
+- If it moves back by more, `NextId()` throws a `SnowflakeClockException` instead of risking duplicate IDs.
+  The generator keeps working once the clock is correct again.
+
+```csharp
+builder.Services.AddSnowspeck(options =>
+{
+    options.WorkerId = 1;
+    options.MaxClockSkewMs = 50; // tolerate up to 50 ms of backward clock movement
+});
+```
+
+The epoch must not be in the future and must never change once IDs have been issued.
+
+---
+
+## Using IDs in JavaScript / JSON
+
+Snowflake IDs are larger than JavaScript's `Number.MAX_SAFE_INTEGER` (2⁵³−1), so JavaScript clients would round them.
+Send them as strings instead, for example with `System.Text.Json`:
+
+```csharp
+using System.Text.Json.Serialization;
+
+public class Order
+{
+    [JsonNumberHandling(JsonNumberHandling.WriteAsString | JsonNumberHandling.AllowReadingFromString)]
+    public long Id { get; set; }
+}
+```
+
+---
+
+## Testing
+
+To control the timestamps a generator produces in tests, pass a `TimeProvider`, for example
+`FakeTimeProvider` from the `Microsoft.Extensions.TimeProvider.Testing` package:
+
+```csharp
+var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+var generator = new SignedSnowflakeService(new SnowflakeOptions { WorkerId = 1 }, clock);
+
+long id = generator.NextId();
+generator.Decode(id).ToDateTimeOffset(); // 2026-01-01T00:00:00Z
+```
+
+A generator issues at most 4096 IDs per millisecond, so advance a fake clock (for example with
+`clock.Advance(...)` or `clock.AutoAdvanceAmount`) when a test needs more than that.
+
+The `AddSnowspeck` registrations always use the system clock, even when a `TimeProvider` is registered in the container.
+To use a custom clock with dependency injection, register the generator yourself:
+
+```csharp
+builder.Services.AddSingleton<ISnowflakeGenerator<long>>(sp => new SignedSnowflakeService(
+    new SnowflakeOptions { WorkerId = 1 },
+    sp.GetRequiredService<TimeProvider>()));
+```
+
+---
+
+## Extensibility
+
+`SignedSnowflakeService` and `UnsignedSnowflakeService` are built on `SnowflakeServiceBase<TId>`. Derive from it to
+change how IDs are composed and parsed, where the time comes from (`GetCurrentTimestamp`), or how clock skew is
+handled (`HandleClockSkew`, `WaitForNextMillisOffset`).
 
 ### Have an idea or feature request? Feel free to open an issue.
 
