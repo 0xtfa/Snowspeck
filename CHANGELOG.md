@@ -2,7 +2,7 @@
 
 All notable changes to Snowspeck are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## 1.1.0 (unreleased)
+## 1.1.0
 
 A drop-in update: the public API only gains additions, and it is checked against 1.0.2 on every build. IDs keep exactly
 the same bit layout, so IDs created by 1.0.x decode identically, and IDs keep increasing across the upgrade. One narrow
