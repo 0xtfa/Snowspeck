@@ -2,6 +2,7 @@
 #
 # One-time setup on nuget.org (your username > Trusted Publishing > add a policy):
 #   Repository Owner: 0xtfa    Repository: Snowspeck    Workflow File: release.yml    Environment: (empty)
+#   Scopes: Push only new package versions    Glob Patterns and Packages: Snowspeck
 #
 # To release: set <Version> in Snowspeck.csproj, merge to main, then tag that commit on main:
 #   git tag v1.2.3 && git push origin v1.2.3
